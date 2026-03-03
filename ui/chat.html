@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>📚 Agentic RAG Chatbot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <h2>📚 Agentic RAG</h2>
+    <p class="subtitle">Upload a document and ask questions. Get grounded answers with citations.</p>
+
+    <div class="divider"></div>
+
+    <h3>📄 Upload Document</h3>
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📎</div>
+      <p id="uploadLabel">Click or drag PDF here</p>
+      <input type="file" id="fileInput" accept=".pdf" />
+    </div>
+
+    <button class="btn-ingest" id="ingestBtn" onclick="ingestDocument()">📥 Ingest Document</button>
+    <div class="status" id="ingestStatus"></div>
+    <div class="doc-info" id="docInfo">
+      <div class="title" id="docTitle"></div>
+      <div class="stats" id="docStats"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Document Management -->
+    <h3>🗂️ Document Management</h3>
+    <button class="btn-ingest visible" style="background:#334155;margin-top:4px" onclick="resetAll()">🗑️ Reset All Documents</button>
+
+    <div class="divider"></div>
+
+    <h3>🧠 Memory</h3>
+    <div class="memory-panel" id="memoryPanel">No memories yet.</div>
+    <button class="btn-ingest visible" style="background:#334155;margin-top:4px" onclick="loadMemory()">Refresh Memory</button>
+
+    <div class="divider"></div>
+
+    <!-- Conversation History -->
+    <h3>💬 History</h3>
+    <div class="memory-panel" id="historyPanel" style="max-height:120px">No history yet.</div>
+    <button class="btn-ingest visible" style="background:#334155;margin-top:4px" onclick="clearHistory()">Clear History</button>
+  </aside>
+
+  <!-- Main Chat -->
+  <main class="main">
+    <div class="header">
+      <h1>📚 Agentic RAG Chatbot</h1>
+      <span class="badge">HyDE + RAG</span>
+      <span class="badge" id="streamBadge" style="cursor:pointer" onclick="toggleStream()">⚡ Stream: ON</span>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">📄</div>
+        <h3>No document loaded</h3>
+        <p>Upload a PDF in the sidebar, ingest it, then start asking questions about its content.</p>
+      </div>
+    </div>
+
+    <div class="typing" id="typing">
+      <span></span><span></span><span></span>
+    </div>
+
+    <div class="input-bar">
+      <input type="text" id="queryInput" placeholder="Ask about your document..."
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey)sendQuery()" />
+      <button id="sendBtn" onclick="sendQuery()">Send</button>
+    </div>
+  </main>
+
+  <script>
+    const API = "";
+    let selectedFile = null;
+    let currentDocId = null;
+    let useStreaming = true;
+
+    // === Streaming Toggle ===
+    function toggleStream() {
+      useStreaming = !useStreaming;
+      document.getElementById("streamBadge").textContent = useStreaming ? "⚡ Stream: ON" : "⚡ Stream: OFF";
+      document.getElementById("streamBadge").style.background = useStreaming ? "#6366f120" : "#47556920";
+    }
+
+    // === File Upload ===
+    const fileInput = document.getElementById("fileInput");
+    const uploadArea = document.getElementById("uploadArea");
+    const uploadLabel = document.getElementById("uploadLabel");
+    const ingestBtn = document.getElementById("ingestBtn");
+
+    fileInput.addEventListener("change", (e) => {
+      selectedFile = e.target.files[0];
+      if (selectedFile) {
+        uploadLabel.textContent = selectedFile.name;
+        ingestBtn.classList.add("visible");
+      }
+    });
+
+    uploadArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadArea.classList.add("dragover");
+    });
+    uploadArea.addEventListener("dragleave", () => uploadArea.classList.remove("dragover"));
+    uploadArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove("dragover");
+      selectedFile = e.dataTransfer.files[0];
+      if (selectedFile) {
+        uploadLabel.textContent = selectedFile.name;
+        ingestBtn.classList.add("visible");
+      }
+    });
+
+    // === Ingest ===
+    async function ingestDocument() {
+      if (!selectedFile) return;
+      const status = document.getElementById("ingestStatus");
+      showStatus(status, "Parsing and indexing...", "loading");
+      ingestBtn.disabled = true;
+
+      try {
+        const form = new FormData();
+        form.append("file", selectedFile);
+        const res = await fetch(`${API}/upload`, { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Upload failed");
+
+        currentDocId = data.doc_id;
+        document.getElementById("docTitle").textContent = data.title || "Document";
+        document.getElementById("docStats").textContent =
+          `${data.chunks_indexed} chunks | ${data.sections_found} sections`;
+        document.getElementById("docInfo").classList.add("visible");
+        showStatus(status, `✅ Indexed! ${data.chunks_indexed} chunks`, "success");
+        document.getElementById("emptyState").style.display = "none";
+      } catch (err) {
+        showStatus(status, `❌ ${err.message}`, "error");
+      }
+      ingestBtn.disabled = false;
+    }
+
+    // === Send Query ===
+    async function sendQuery() {
+      const input = document.getElementById("queryInput");
+      const q = input.value.trim();
+      if (!q) return;
+
+      input.value = "";
+      addMessage("user", q);
+
+      if (useStreaming) {
+        await sendStreaming(q);
+      } else {
+        await sendNormal(q);
+      }
+      loadHistory();
+    }
+
+    // Normal (non-streaming)
+    async function sendNormal(q) {
+      showTyping(true);
+      try {
+        const res = await fetch(`${API}/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, doc_id: currentDocId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Query failed");
+        showTyping(false);
+        addAssistantMessage(data);
+      } catch (err) {
+        showTyping(false);
+        addMessage("assistant", `❌ Error: ${err.message}`);
+      }
+    }
+
+    // Streaming
+    async function sendStreaming(q) {
+      const msgs = document.getElementById("messages");
+
+      // Create assistant message shell
+      const div = document.createElement("div");
+      div.className = "message assistant";
+      const bubbleId = "stream-" + Date.now();
+      div.innerHTML = `<span class="label">Assistant</span>
+        <div class="bubble" id="${bubbleId}"><span class="stream-cursor">▊</span></div>`;
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      const bubble = document.getElementById(bubbleId);
+      let fullText = "";
+
+      try {
+        const res = await fetch(`${API}/query/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q, doc_id: currentDocId })
+        });
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const raw = line.slice(6).trim();
+            if (!raw) continue;
+
+            try {
+              const chunk = JSON.parse(raw);
+
+              if (chunk.type === "token") {
+                fullText += chunk.content;
+                bubble.innerHTML = formatText(fullText) + '<span class="stream-cursor">▊</span>';
+                msgs.scrollTop = msgs.scrollHeight;
+              }
+
+              if (chunk.type === "done") {
+                bubble.innerHTML = formatText(fullText);
+
+                // Add citations
+                if (chunk.citations && chunk.citations.length > 0) {
+                  const citHtml = buildCitationsHtml(chunk.citations);
+                  div.insertAdjacentHTML("beforeend", citHtml);
+                }
+
+                // Add complexity badges
+                const cs = chunk.complexity_summary;
+                if (cs && (cs.high || cs.medium || cs.low)) {
+                  const badgeHtml = buildComplexityHtml(cs);
+                  div.insertAdjacentHTML("beforeend", badgeHtml);
+                }
+              }
+            } catch (e) { /* skip parse errors */ }
+          }
+        }
+      } catch (err) {
+        bubble.innerHTML = `❌ Error: ${err.message}`;
+      }
+    }
+
+    // === Document Management ===
+    async function resetAll() {
+      if (!confirm("Reset all documents, memory, and history?")) return;
+      try {
+        await fetch(`${API}/documents/reset`, { method: "POST" });
+        document.getElementById("docInfo").classList.remove("visible");
+        document.getElementById("messages").innerHTML = `
+          <div class="empty-state" id="emptyState">
+            <div class="icon">📄</div>
+            <h3>No document loaded</h3>
+            <p>Upload a PDF in the sidebar to get started.</p>
+          </div>`;
+        currentDocId = null;
+        showStatus(document.getElementById("ingestStatus"), "✅ Everything reset", "success");
+        loadMemory();
+        loadHistory();
+      } catch (err) {
+        alert("Reset failed: " + err.message);
+      }
+    }
+
+    // === Conversation History ===
+    async function loadHistory() {
+      try {
+        const res = await fetch(`${API}/history`);
+        const data = await res.json();
+        const panel = document.getElementById("historyPanel");
+        if (data.history && data.history.length > 0) {
+          panel.textContent = data.history.map(
+            (t, i) => `${i + 1}. Q: ${t.query}\n   A: ${t.answer.substring(0, 80)}...`
+          ).join("\n\n");
+        } else {
+          panel.textContent = "No history yet.";
+        }
+      } catch (err) {
+        document.getElementById("historyPanel").textContent = "Failed to load.";
+      }
+    }
+
+    async function clearHistory() {
+      try {
+        await fetch(`${API}/history`, { method: "DELETE" });
+        document.getElementById("historyPanel").textContent = "No history yet.";
+      } catch (err) {
+        alert("Failed to clear history");
+      }
+    }
+
+    // === Memory ===
+    async function loadMemory() {
+      try {
+        const res = await fetch(`${API}/memory`);
+        const data = await res.json();
+        const panel = document.getElementById("memoryPanel");
+        let text = "";
+        if (data.user_memory) text += "👤 User:\n" + data.user_memory + "\n\n";
+        if (data.company_memory) text += "🏢 Company:\n" + data.company_memory;
+        panel.textContent = text || "No memories yet.";
+      } catch (err) {
+        document.getElementById("memoryPanel").textContent = "Failed to load.";
+      }
+    }
+
+    // === Message Rendering ===
+    function addMessage(role, text) {
+      const el = document.getElementById("emptyState");
+      if (el) el.style.display = "none";
+
+      const msgs = document.getElementById("messages");
+      const div = document.createElement("div");
+      div.className = `message ${role}`;
+      div.innerHTML = `
+        <span class="label">${role === "user" ? "You" : "Assistant"}</span>
+        <div class="bubble">${escapeHtml(text)}</div>
+      `;
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function addAssistantMessage(data) {
+      const msgs = document.getElementById("messages");
+      const div = document.createElement("div");
+      div.className = "message assistant";
+
+      let html = `<span class="label">Assistant</span>
+        <div class="bubble">${formatText(data.answer)}</div>`;
+
+      const cs = data.complexity_summary;
+      if (cs && (cs.high || cs.medium || cs.low)) {
+        html += buildComplexityHtml(cs);
+      }
+
+      if (data.citations && data.citations.length > 0) {
+        html += buildCitationsHtml(data.citations);
+      }
+
+      div.innerHTML = html;
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    // === HTML Builders ===
+    function buildComplexityHtml(cs) {
+      let html = '<div class="complexity-summary">';
+      if (cs.high) html += `<span class="complexity-badge high">🔴 High: ${cs.high}</span>`;
+      if (cs.medium) html += `<span class="complexity-badge medium">🟡 Medium: ${cs.medium}</span>`;
+      if (cs.low) html += `<span class="complexity-badge low">🟢 Low: ${cs.low}</span>`;
+      return html + '</div>';
+    }
+
+    function buildCitationsHtml(citations) {
+      const cid = "cite-" + Date.now();
+      return `<div class="citations">
+        <div class="citations-header" onclick="document.getElementById('${cid}').classList.toggle('open')">
+          📌 Citations (${citations.length}) ▾
+        </div>
+        <div class="citations-list" id="${cid}">
+          ${citations.map(c => {
+            const icon = c.complexity === "high" ? "🔴" : c.complexity === "medium" ? "🟡" : "🟢";
+            const title = c.section_title ? ` — ${c.section_title.substring(0, 50)}` : "";
+            return `<div class="citation-item">${icon} Section ${c.section}, Page ${c.page} — <em>${c.section_type}</em>${title}</div>`;
+          }).join("")}
+        </div>
+      </div>`;
+    }
+
+    // === Helpers ===
+    function showStatus(el, msg, type) {
+      el.textContent = msg;
+      el.className = `status visible ${type}`;
+    }
+
+    function showTyping(show) {
+      document.getElementById("typing").classList.toggle("visible", show);
+    }
+
+    function escapeHtml(text) {
+      const d = document.createElement("div");
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    function formatText(text) {
+      return escapeHtml(text)
+        .replace(/\n/g, "<br>")
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\[(.*?)\]/g, '<span style="color:#a5b4fc;font-weight:600">[$1]</span>');
+    }
+
+    // Init
+    loadMemory();
+    loadHistory();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "features": {
+    "rag": true,
+    "memory": true,
+    "citations": true
+  },
+  "steps": [
+    {
+      "query": "What are the main findings?",
+      "answer_length": 269,
+      "citations": 5
+    },
+    {
+      "user_memory": true,
+      "company_memory": true
+    }
+  ],
+  "errors": []
+}

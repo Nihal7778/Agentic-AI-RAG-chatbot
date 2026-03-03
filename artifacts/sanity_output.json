@@ -1,0 +1,83 @@
+{
+  "implemented_features": [
+    "A",
+    "B",
+    "C"
+  ],
+  "qa": [
+    {
+      "question": "What methodology or approach is described?",
+      "answer": "The methodology described involves the LSTM_UNIV_CNN_10 model, which is a modified version of the LSTM_UNIV_ED_N_10 model. This model utilizes a dedicated CNN block for encoding, which extracts important features from time-series data, and subsequently feeds these features into an LSTM block for robust forecasting of future values in the sequence [Section 3.9, Page 49].",
+      "citations": [
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 3.9, Page 49",
+          "snippet": "[general] 3.9 The LSTM_UNIV_CNN_10 model"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 3.9, Page 49",
+          "snippet": "[general] 3.9 The LSTM_UNIV_CNN_10 model"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 3.9, Page 49",
+          "snippet": "[general] 3.9 The LSTM_UNIV_CNN_10 model"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 3.9, Page 49",
+          "snippet": "[general] 3.9 The LSTM_UNIV_CNN_10 model"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 3.9, Page 49",
+          "snippet": "[general] 3.9 The LSTM_UNIV_CNN_10 model"
+        }
+      ]
+    },
+    {
+      "question": "What are the key findings or results?",
+      "answer": "I don't have enough information in the provided documents to answer that accurately.",
+      "citations": [
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 1.3.1, Page 85",
+          "snippet": "[methodology] 1.3.1 Convolutional neural network"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 1.3.1, Page 85",
+          "snippet": "[methodology] 1.3.1 Convolutional neural network"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 1.3.1, Page 85",
+          "snippet": "[methodology] 1.3.1 Convolutional neural network"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 1.3.1, Page 85",
+          "snippet": "[methodology] 1.3.1 Convolutional neural network"
+        },
+        {
+          "source": "Arxiv.pdf",
+          "locator": "Section 1.3.1, Page 85",
+          "snippet": "[methodology] 1.3.1 Convolutional neural network"
+        }
+      ]
+    }
+  ],
+  "demo": {
+    "memory_writes": [
+      {
+        "target": "USER",
+        "summary": "Sanity check: user queried about document topics and methodology"
+      },
+      {
+        "target": "COMPANY",
+        "summary": "Sanity check: document covers machine learning algorithms and applications"
+      }
+    ]
+  }
+}
