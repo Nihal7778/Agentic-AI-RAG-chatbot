@@ -95,9 +95,9 @@ make eval
 # Install CLIP dependencies (for image understanding)
 pip install transformers torch Pillow 
 
-# Install table extraction (optional, better quality)
+# Install table extraction ( better quality)
 pip install "camelot-py[base]"
-brew install ghostscript  # macOS
+brew install ghostscript  
 ```
 
 Set `MULTIMODAL_ENABLED = True` in `src/config.py` to activate image search.
