@@ -5,7 +5,13 @@ An intelligent document Q&A system that combines agentic retrieval with multimod
 
 <img src="assets/Architecture.png" width="900" alt="RAG Architecture">
 
+---
 
+## Video Walkthrough
+
+https://drive.google.com/file/d/1xCL3k6ym-9efe_T14XaQirNXRruPwdUD/view?usp=drivesdk
+
+---
 
 ## Features Implemented
 
@@ -174,6 +180,3 @@ See `EVAL_QUESTIONS.md` for a full list. Quick examples:
 ---
 
 
-## Video Walkthrough
-
-https://drive.google.com/file/d/1xCL3k6ym-9efe_T14XaQirNXRruPwdUD/view?usp=drivesdk
