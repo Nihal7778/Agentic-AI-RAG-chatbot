@@ -26,7 +26,7 @@ SECTION_TYPE_KEYWORDS = {
 }
 
 
-# Helpers 
+# ── Helpers ──────────────────────────────────────────────────
 
 def _extract_section_number(query: str) -> Optional[str]:
     for p in [r"chapter\s*(\d+)", r"section\s*(\d+(?:\.\d+)*)", r"page\s*(\d+)"]:
@@ -52,12 +52,12 @@ def _metadata_search(
     if not results["ids"]:
         return []
     return [
-        {"text": results["documents"][i], "metadata": results["metadatas"][i]}
+        {"text": results["documents"][i], "metadata": results["metadatas"][i], "score": 0.95}
         for i in range(len(results["ids"]))
     ]
 
 
-# Core retrieval logic 
+# ── Core retrieval logic ─────────────────────────────────────
 
 def retrieve_contract_context(
     embedder: ContractEmbedder,
@@ -98,7 +98,7 @@ def retrieve_contract_context(
     )
 
 
-#  Class wrapper (backward-compatible with orchestrator) 
+# ── Class wrapper (backward-compatible with orchestrator) ────
 
 class BasicRAGRetriever:
     """Drop-in replacement preserving the original interface."""
@@ -133,7 +133,7 @@ class BasicRAGRetriever:
         return {"documents": docs, "retrieval_time": time.time() - start, "strategy": "basic_semantic"}
 
 
-# Option A: dynamic_prompt middleware (RAG chain) 
+# ── Option A: dynamic_prompt middleware (RAG chain) ──────────
 # Single LLM call — always retrieves then generates.
 
 def create_basic_rag_middleware(embedder: ContractEmbedder, k: int = TOP_K):
@@ -166,7 +166,7 @@ def build_basic_rag_agent(model, embedder: ContractEmbedder, k: int = TOP_K):
     return create_agent(model, tools=[], middleware=[middleware])
 
 
-#  Option B: @tool-based (agentic RAG) 
+# ── Option B: @tool-based (agentic RAG) ─────────────────────
 # Two LLM calls — model decides when to search.
 
 def create_retrieval_tool(embedder: ContractEmbedder, k: int = TOP_K):

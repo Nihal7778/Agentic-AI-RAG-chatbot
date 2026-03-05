@@ -24,6 +24,22 @@ LLM_TEMPERATURE = 0.3          # Low for factual document analysis
 HYDE_TEMPERATURE = 0.7          # Higher for diverse hypotheses
 HYDE_NUM_HYPOTHESES = 2        # Reduced from 3 for speed
 
+# === CLIP / Multimodal ===
+CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
+CLIP_COLLECTION_NAME = "image_chunks"
+CLIP_EMBEDDING_DIM = 512
+
+# === Image Extraction ===
+MIN_IMAGE_SIZE = 100            # Skip images smaller than 100x100 px
+MIN_IMAGE_BYTES = 5000          # Skip images smaller than 5KB
+
+# === Vision Model ===
+VISION_MODEL = "gpt-4o"         # Only used when images are found
+IMAGE_RELEVANCE_THRESHOLD = 0.2 # CLIP scores lower on academic figures
+
+# === Multimodal Toggle ===
+MULTIMODAL_ENABLED = True       # Set False to disable image pipeline entirely
+
 # === Embeddings ===
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
@@ -37,12 +53,12 @@ CHUNK_OVERLAP = 50              # Overlap between chunks
 MIN_CHUNK_SIZE = 50             # Skip tiny chunks
 
 # === Retrieval ===
-TOP_K = 5                       # Number of docs to retrieve
-RELEVANCE_THRESHOLD = 0.6       # Min score to consider relevant
+TOP_K = 7                       # Number of docs to retrieve
+RELEVANCE_THRESHOLD = 0.3       # Min score to consider relevant
 MAX_RETRIES = 1                 # 1 retry for quality (set to 0 to disable)
 
 # === Memory ===
-MEMORY_CONFIDENCE_THRESHOLD = 0.7  # Only write when confidence > this
+MEMORY_CONFIDENCE_THRESHOLD = 0.5  # Only write when confidence > this
 MAX_CONVERSATION_HISTORY = 10      # Keep last N turns for context
 
 # === Section Types (for documents) ===

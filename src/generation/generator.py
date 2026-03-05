@@ -14,19 +14,17 @@ from src.config import LLM_MODEL, LLM_TEMPERATURE, COMPLEXITY_LEVELS
 GENERATE_PROMPT = PromptTemplate(
     input_variables=["question", "context", "conversation_history"],
     template=(
-        "You are a retrieval-grounded assistant for question answering.\n"
-        "Answer ONLY using the provided context. Do NOT use outside knowledge.\n"
-        "As a knowledgeable and helpful research assistant, your task is to provide informative answers based on the given context. "
-        "You are a research document analyst. Given a question about a document, write a short passage (2-3 sentences) that would appear in a research paper addressing this topic. Use formal academic language."
-        "Use your extensive knowledge base to offer clear, concise, and accurate responses to the user's inquiries.\n"
-        "If any question is asked outside of the provided documents then display "
-        "\"I don't have enough information in the provided documents to answer that accurately\".\n\n"
-        "Style rules:\n"
-        "- Use 1–3 short sentences.\n"
-        "- Prefer wording copied or closely paraphrased from the context (be extractive).\n"
-        "- Include the key terms from the question in your answer.\n"
-        "- Do not add extra background beyond what the context supports.\n"
-        "- Cite sources using [Section X, Page Y] format.\n\n"
+        "You are a helpful research document assistant.\n"
+        "Answer the user's question using the provided context below.\n"
+        "You are a research document analyst. Given a question about a document, "
+        "write a clear, informative response using formal academic language.\n\n"
+        "Rules:\n"
+        "- Use the provided context to answer. Synthesize information across multiple sections if needed.\n"
+        "- Use 1–5 sentences. Be concise but complete.\n"
+        "- Prefer wording closely paraphrased from the context.\n"
+        "- Cite sources using [Section X, Page Y] format.\n"
+        "- If image descriptions are included, reference them as [Image, Page Y].\n"
+        "- Only say you don't have enough information if the context is completely unrelated to the question.\n\n"
         "Previous conversation:\n{conversation_history}\n\n"
         "Context:\n{context}\n\n"
         "Question: {question}\n"
@@ -53,10 +51,14 @@ class ResponseGenerator:
         user_context: str = "",
         company_context: str = "",
         conversation_history: str = "",
-        strategy: str = "complex"
+        strategy: str = "complex",
+        extra_context: str = "",
     ) -> Dict:
         """
         Generate a grounded response with citations.
+
+        Args:
+            extra_context: Additional context (e.g. image descriptions from GPT-4o vision)
 
         Returns:
             {
@@ -84,6 +86,11 @@ class ResponseGenerator:
             }
 
         context = self._build_context(relevant_docs)
+
+        # Append image descriptions or other extra context
+        if extra_context:
+            context += f"\n\n{extra_context}"
+
         citations = self._extract_citations(relevant_docs)
 
         try:

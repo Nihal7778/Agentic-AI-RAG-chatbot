@@ -1,7 +1,7 @@
 """
 Orchestrator for Agentic RAG Chatbot.
 Main agent loop: route → retrieve → evaluate → score → generate → memory.
-Includes conversation history, PII filtering, and document management.
+Includes conversation history, multimodal support, and document management.
 """
 
 from typing import Dict, Optional, List
@@ -15,7 +15,15 @@ from src.generation.generator import ResponseGenerator
 from src.memory.reader import MemoryReader
 from src.memory.writer import MemoryWriter
 from src.tools.weather import WeatherTool
-from src.config import MAX_RETRIES, TOP_K, MAX_CONVERSATION_HISTORY
+from src.config import MAX_RETRIES, TOP_K, MAX_CONVERSATION_HISTORY, MULTIMODAL_ENABLED
+
+if MULTIMODAL_ENABLED:
+    from src.retrieval.clip_embedder import CLIPEmbedder
+    from src.retrieval.multimodal_rag import MultimodalRetriever
+    from src.ingestion.image_extractor import (
+        extract_images, extract_tables,
+        prepare_images_for_indexing, prepare_tables_for_indexing,
+    )
 
 
 class DocumentAgent:
@@ -25,14 +33,12 @@ class DocumentAgent:
     Flow:
     1. Check conversation history for context
     2. Read user memory
-    3. Route query → conversational / simple / complex
-    4. PII-filter the query before sending to LLM
-    5. Retrieve documents (Basic RAG or Multi-HyDE)
-    6. Evaluate results → retry if insufficient (agentic loop)
-    7. Score complexity of retrieved sections
-    8. PII-filter retrieved chunks before sending to LLM
-    9. Generate response with citations
-    10. Write to memory if high-signal
+    3. Route query → conversational / simple / complex / image_query / tool_call
+    4. Retrieve documents (Basic RAG, Multi-HyDE, or Multimodal)
+    5. Evaluate results → retry if insufficient (agentic loop)
+    6. Score complexity of retrieved sections
+    7. Generate response with citations
+    8. Write to memory if high-signal
     """
 
     def __init__(self):
@@ -47,6 +53,22 @@ class DocumentAgent:
         self.mem_writer = MemoryWriter()
         self.weather_tool = WeatherTool()
         self.conversation_history: List[Dict] = []
+
+        # Multimodal components
+        self.multimodal_enabled = MULTIMODAL_ENABLED
+        self.clip_embedder = None
+        self.multimodal_retriever = None
+        self.extracted_images_cache: Dict[str, list] = {}
+
+        if self.multimodal_enabled:
+            try:
+                self.clip_embedder = CLIPEmbedder()
+                self.multimodal_retriever = MultimodalRetriever(
+                    self.embedder, self.clip_embedder
+                )
+            except Exception as e:
+                print(f"⚠️ Multimodal init failed, text-only mode: {e}")
+                self.multimodal_enabled = False
 
     def process_query(
         self,
@@ -104,8 +126,7 @@ class DocumentAgent:
                 "agent_trace": trace
             }
 
-        # --- Step 4: Retrieve with retry loop ---
-        # Check if documents exist for RAG queries
+        # --- Check if documents exist ---
         if self.embedder.get_collection_count() == 0:
             self._add_to_history(query, "Please upload a document first.")
             return {
@@ -116,9 +137,16 @@ class DocumentAgent:
             }
 
         filter_dict = {"doc_id": doc_id} if doc_id else None
-        documents = []
 
-        # Use conversation context to enhance query if needed
+        # --- Image query path (multimodal) ---
+        if route["strategy"] == "image_query" and self.multimodal_enabled:
+            return self._handle_image_query(
+                query, filter_dict, user_context,
+                company_context, conv_context, trace
+            )
+
+        # --- Step 4: Retrieve with retry loop (text path) ---
+        documents = []
         enhanced_query = self._enhance_with_context(query, conv_context)
 
         for attempt in range(MAX_RETRIES + 1):
@@ -158,7 +186,7 @@ class DocumentAgent:
                     "new_query": enhanced_query
                 })
 
-        # --- Step 7: Score complexity ---
+        # --- Step 5: Score complexity ---
         scored_docs = self.complexity_scorer.score_sections(
             documents, user_query=query
         )
@@ -196,7 +224,6 @@ class DocumentAgent:
             "wrote_company": mem_result.get("wrote_company", False)
         })
 
-        # Save to conversation history
         self._add_to_history(query, response["answer"])
 
         return {
@@ -206,77 +233,190 @@ class DocumentAgent:
             "agent_trace": trace
         }
 
+    # === Multimodal Handling ===
+
+    def _handle_image_query(
+        self, query, filter_dict, user_context,
+        company_context, conv_context, trace
+    ) -> Dict:
+        """Handle image/figure/chart queries via dual pipeline."""
+
+        # Gather all cached PIL images across documents
+        cached_images = []
+        for imgs in self.extracted_images_cache.values():
+            cached_images.extend(imgs)
+
+        mm_result = self.multimodal_retriever.retrieve_with_descriptions(
+            query=query,
+            extracted_images=cached_images,
+            k_text=TOP_K,
+            k_images=2,
+            filter_dict=filter_dict,
+        )
+
+        trace["steps"].append({
+            "step": "multimodal_retrieval",
+            "text_results": len(mm_result["text"]),
+            "image_results": len(mm_result["images"]),
+            "has_images": mm_result["has_images"],
+        })
+
+        # Build extra context from image descriptions
+        extra_context = ""
+        if mm_result["image_descriptions"]:
+            extra_context = (
+                "\n\n--- Image Descriptions ---\n\n"
+                + "\n\n".join(mm_result["image_descriptions"])
+            )
+
+        # Score text docs for complexity
+        scored_docs = self.complexity_scorer.score_sections(
+            mm_result["text"], user_query=query
+        )
+
+        # Generate response with text + image context
+        response = self.generator.generate(
+            query=query,
+            documents=scored_docs,
+            user_context=user_context,
+            company_context=company_context,
+            conversation_history=conv_context,
+            strategy="image_query",
+            extra_context=extra_context,
+        )
+
+        trace["steps"].append({
+            "step": "generate",
+            "has_citations": len(response.get("citations", [])) > 0,
+            "used_vision": mm_result["has_images"],
+        })
+
+        # Memory write
+        mem_result = self.mem_writer.decide_and_write(
+            query=query,
+            response=response["answer"],
+            documents=scored_docs,
+            user_context=user_context
+        )
+        trace["steps"].append({
+            "step": "memory_write",
+            "wrote_user": mem_result.get("wrote_user", False),
+            "wrote_company": mem_result.get("wrote_company", False)
+        })
+
+        self._add_to_history(query, response["answer"])
+
+        return {
+            "answer": response["answer"],
+            "citations": response["citations"],
+            "complexity_summary": response.get("complexity_summary", {}),
+            "has_images": mm_result["has_images"],
+            "agent_trace": trace,
+        }
+
+    # === Document Management ===
+
     def ingest_document(self, pdf_path: str) -> Dict:
-        """Ingest a PDF document into the system."""
+        """Ingest a PDF — text + images + tables."""
         from src.ingestion.parser import parse_document
         from src.ingestion.chunker import chunk_document, chunks_to_documents
 
+        # Text pipeline (existing)
         document = parse_document(pdf_path)
         chunks = chunk_document(document)
         doc_id = chunks[0].doc_id if chunks else "unknown"
         docs = chunks_to_documents(chunks)
-        count = self.embedder.index_chunks(docs)
+        text_count = self.embedder.index_chunks(docs)
+
+        image_count = 0
+        table_count = 0
+
+        # Multimodal pipeline (new, additive)
+        if self.multimodal_enabled and self.clip_embedder:
+            try:
+                # Images → CLIP → image_chunks collection
+                raw_images = extract_images(pdf_path, doc_id)
+                if raw_images:
+                    prepared = prepare_images_for_indexing(raw_images, self.clip_embedder)
+                    image_count = self.clip_embedder.index_images(prepared)
+                    self.extracted_images_cache[doc_id] = raw_images
+
+                # Tables → markdown → text collection (MiniLM)
+                raw_tables = extract_tables(pdf_path, doc_id)
+                if raw_tables:
+                    table_docs = prepare_tables_for_indexing(raw_tables)
+                    table_count = self.embedder.index_chunks(table_docs)
+
+            except Exception as e:
+                print(f"⚠️ Multimodal ingestion failed (text still indexed): {e}")
 
         return {
             "doc_id": doc_id,
-            "chunks_indexed": count,
+            "chunks_indexed": text_count,
+            "images_indexed": image_count,
+            "tables_indexed": table_count,
             "sections_found": len(document.sections),
-            "title": document.title
+            "title": document.title,
         }
 
     def delete_document(self, doc_id: str) -> Dict:
         """Delete all chunks belonging to a document."""
         self.embedder.delete_document(doc_id)
+        if self.multimodal_enabled and self.clip_embedder:
+            try:
+                self.clip_embedder.collection.delete(where={"doc_id": doc_id})
+            except Exception:
+                pass
+        self.extracted_images_cache.pop(doc_id, None)
         return {"deleted": True, "doc_id": doc_id}
 
     def list_documents(self) -> Dict:
         """List all indexed documents."""
         count = self.embedder.get_collection_count()
-        return {"total_chunks": count}
+        image_count = 0
+        if self.multimodal_enabled and self.clip_embedder:
+            image_count = self.clip_embedder.get_collection_count()
+        return {"total_chunks": count, "total_images": image_count}
 
     def reset_all(self) -> Dict:
         """Clear all documents, memory, and conversation history."""
         self.embedder.reset()
+        if self.multimodal_enabled and self.clip_embedder:
+            self.clip_embedder.reset()
         self.conversation_history = []
+        self.extracted_images_cache = {}
         return {"reset": True}
 
     # === Conversation History ===
 
     def _add_to_history(self, query: str, answer: str):
-        """Add a Q&A turn to conversation history."""
         self.conversation_history.append({
             "query": query,
-            "answer": answer[:300]  # Truncate to save tokens
+            "answer": answer[:300]
         })
-        # Keep only recent history
         if len(self.conversation_history) > MAX_CONVERSATION_HISTORY:
             self.conversation_history = self.conversation_history[-MAX_CONVERSATION_HISTORY:]
 
     def _get_conversation_context(self) -> str:
-        """Build conversation context string from history."""
         if not self.conversation_history:
             return ""
         lines = []
-        for turn in self.conversation_history[-5:]:  # Last 5 turns
+        for turn in self.conversation_history[-5:]:
             lines.append(f"User: {turn['query']}")
             lines.append(f"Assistant: {turn['answer'][:150]}")
         return "\n".join(lines)
 
     def _enhance_with_context(self, query: str, conv_context: str) -> str:
-        """Enhance ambiguous queries using conversation context."""
         ambiguous = ["it", "this", "that", "these", "those", "them",
                      "the same", "more about", "what about", "elaborate"]
         q_lower = query.lower()
-
         if conv_context and any(word in q_lower for word in ambiguous):
-            # Append last topic for context
             last_turn = self.conversation_history[-1] if self.conversation_history else None
             if last_turn:
                 return f"{query} (context: previously discussed {last_turn['query']})"
         return query
 
     def _handle_conversation(self, query: str) -> str:
-        """Handle casual/conversational queries without RAG."""
         q = query.lower().strip()
 
         greetings = ["hey", "hello", "hi", "howdy", "sup", "yo"]
@@ -303,11 +443,12 @@ class DocumentAgent:
             return ("I'm an AI document assistant! Here's what I can do:\n"
                     "📄 Analyze uploaded PDF documents\n"
                     "🔍 Answer questions grounded in the document content\n"
+                    "🖼️ Understand figures, charts, and diagrams\n"
                     "📌 Provide citations for every answer\n"
                     "🧠 Remember your preferences across conversations\n\n"
                     "Upload a PDF and start asking questions!")
 
         if "who are you" in q:
-            return "I'm an Agentic RAG Chatbot — I answer questions based on documents you upload. I use HyDE retrieval for complex queries and provide cited, grounded answers."
+            return "I'm an Agentic RAG Chatbot — I answer questions based on documents you upload. I use HyDE retrieval for complex queries, CLIP for image understanding, and provide cited, grounded answers."
 
         return "I'm here to help with document questions! Upload a PDF or ask me something about a loaded document. 😊"

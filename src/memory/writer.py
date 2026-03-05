@@ -47,7 +47,7 @@ Rules:
 - Company memory: reusable knowledge from documents analyzed
   e.g. "CNN models are faster than LSTM but have comparable accuracy for stock prediction"
   e.g. "Ensemble methods improve medical image classification accuracy"
-- Only write if confidence > 0.7
+- Only write if confidence > 0.3
 - Don't duplicate what's already in existing memory"""
 )
 
