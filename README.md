@@ -1,7 +1,7 @@
 
 # Agentic RAG Chatbot
 
-An intelligent document Q&A system that combines agentic retrieval with multimodal understanding. Upload any PDF — research papers, textbooks, technical reports — and get grounded answers with citations, powered by an adaptive retrieval pipeline that routes between Basic RAG, Multi-HyDE, and CLIP-based image search.
+An intelligent document Q&A system that combines agentic retrieval with multimodal understanding. Upload any PDF = research papers, textbooks, technical reports  and get grounded answers with citations, powered by an adaptive retrieval pipeline that routes between Basic RAG, Multi-HyDE, and CLIP-based image search.
 
 <img src="assets/Architecture.png" width="900" alt="RAG Architecture">
 

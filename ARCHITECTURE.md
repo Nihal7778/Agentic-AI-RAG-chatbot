@@ -8,6 +8,12 @@ An Agentic RAG chatbot that answers questions grounded in uploaded PDF documents
 <img src="assets/Architecture.png" width="900" alt="RAG Architecture">
 ---
 
+## System workflow
+<img src= "assets/Multi_Hyde.png" width="500" alt="Multi HyDE workflow">
+<img src= "assets/Naive_RAG.png" width="500" alt="Naive RAG workflow">
+
+---
+
 ## High-Level Flow
 
 ### 1) Ingestion (Upload → Parse → Chunk)
