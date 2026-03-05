@@ -26,3 +26,5 @@ build/
 
 # Model cache
 .cache/
+
+.ui
