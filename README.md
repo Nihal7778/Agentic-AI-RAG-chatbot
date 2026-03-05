@@ -89,11 +89,11 @@ make sanity
 make eval
 ```
 
-### Optional: Multimodal Support
+### Multimodal Support
 
 ```bash
 # Install CLIP dependencies (for image understanding)
-pip install transformers torch Pillow "numpy<2"
+pip install transformers torch Pillow 
 
 # Install table extraction (optional, better quality)
 pip install "camelot-py[base]"
